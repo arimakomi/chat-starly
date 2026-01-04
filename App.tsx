@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { User, Message, Chat, FolderType } from './types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { User, Message, Chat, FolderType, Permissions } from './types';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
@@ -9,11 +9,11 @@ import { gemini } from './services/geminiService';
 
 const AI_BOT: User = {
   id: 'ai-assistant',
-  username: 'gemini_ai',
+  username: 'starly_ai',
   displayName: 'هوش مصنوعی استارلی',
-  avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=starli',
+  avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=starly',
   status: 'online',
-  bio: 'دستیار هوشمند شما در استارلی جت'
+  bio: 'دستیار هوشمند شما در Starly Chat Pro'
 };
 
 const SAVED_MESSAGES_ID = 'saved-messages';
@@ -25,67 +25,71 @@ const App: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [activeFolder, setActiveFolder] = useState<FolderType>('all');
   const [showSettings, setShowSettings] = useState(false);
+  
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (currentUser && e.key === `chats_${currentUser.id}`) {
-        setChats(JSON.parse(e.newValue || '[]'));
+    syncChannelRef.current = new BroadcastChannel('starly_chat_sync');
+    
+    const savedSession = localStorage.getItem('starly_session');
+    if (savedSession && savedSession !== 'undefined' && savedSession !== 'null') {
+      try {
+        const parsed = JSON.parse(savedSession);
+        setCurrentUser(parsed);
+      } catch (e) {
+        console.error("Session error", e);
       }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [currentUser]);
-
-  useEffect(() => {
-    const savedSession = localStorage.getItem('gram_session');
-    if (savedSession) {
-      setCurrentUser(JSON.parse(savedSession));
     }
+
+    return () => {
+      syncChannelRef.current?.close();
+    };
   }, []);
 
   useEffect(() => {
-    if (currentUser) {
-      const savedChats = localStorage.getItem(`chats_${currentUser.id}`);
-      if (savedChats) {
+    if (!currentUser) return;
+    const savedChats = localStorage.getItem(`chats_${currentUser.id}`);
+    if (savedChats) {
+      try {
         setChats(JSON.parse(savedChats));
-      } else {
-        const initialChats: Chat[] = [
-          {
-            id: SAVED_MESSAGES_ID,
-            type: 'saved',
-            participants: [currentUser],
-            messages: [{ id: 'm1', senderId: 'system', text: 'خوش آمدید به استارلی جت! اینجا فضای امن شماست.', timestamp: Date.now() }],
-            unreadCount: 0,
-            pinnedMessages: []
-          },
-          {
-            id: AI_BOT.id,
-            type: 'bot',
-            participants: [currentUser, AI_BOT],
-            messages: [{ id: 'm2', senderId: AI_BOT.id, text: 'سلام! من هوش مصنوعی استارلی هستم. چه خدمتی از من ساخته است؟', timestamp: Date.now() }],
-            unreadCount: 1,
-            pinnedMessages: []
-          }
-        ];
-        setChats(initialChats);
-        setActiveChatId(AI_BOT.id);
+      } catch (e) {
+        console.error("Chats error", e);
+      }
+    }
+
+    const handleSync = (event: MessageEvent) => {
+      if (event.data.type === 'SYNC_ALL' && event.data.userId === currentUser.id) {
+        setChats(event.data.chats);
+      }
+    };
+
+    if (syncChannelRef.current) {
+      syncChannelRef.current.onmessage = handleSync;
+    }
+  }, [currentUser]);
+
+  const updateChats = useCallback((newChats: Chat[]) => {
+    setChats(newChats);
+    if (currentUser) {
+      localStorage.setItem(`chats_${currentUser.id}`, JSON.stringify(newChats));
+      if (syncChannelRef.current) {
+        try {
+          syncChannelRef.current.postMessage({ type: 'SYNC_ALL', chats: newChats, userId: currentUser.id });
+        } catch (e) {
+          console.warn("Sync channel closed, re-opening...");
+          syncChannelRef.current = new BroadcastChannel('starly_chat_sync');
+          syncChannelRef.current.postMessage({ type: 'SYNC_ALL', chats: newChats, userId: currentUser.id });
+        }
       }
     }
   }, [currentUser]);
 
-  useEffect(() => {
-    if (currentUser && chats.length > 0) {
-      localStorage.setItem(`chats_${currentUser.id}`, JSON.stringify(chats));
-    }
-  }, [chats, currentUser]);
-
   const handleAuth = (data: { username: string; password?: string; displayName?: string; isNew: boolean }) => {
-    const users = JSON.parse(localStorage.getItem('gram_users') || '{}');
-    let user: User;
-
+    const users = JSON.parse(localStorage.getItem('starly_users') || '{}');
+    let user: User | null = null;
     if (data.isNew) {
       user = {
-        id: Math.random().toString(36).substr(2, 9),
+        id: `u_${Math.random().toString(36).substr(2, 9)}`,
         username: data.username.toLowerCase(),
         displayName: data.displayName || data.username,
         password: data.password,
@@ -94,130 +98,211 @@ const App: React.FC = () => {
         privacy: { showStatus: 'all', showAvatar: 'all', showBio: 'all' }
       };
       users[user.username] = user;
-      localStorage.setItem('gram_users', JSON.stringify(users));
+      localStorage.setItem('starly_users', JSON.stringify(users));
     } else {
-      user = users[data.username.toLowerCase()];
-    }
-
-    setCurrentUser(user);
-    localStorage.setItem('gram_session', JSON.stringify(user));
-  };
-
-  const startChatWithUsername = (targetUsername: string) => {
-    if (!currentUser) return;
-    const cleanUsername = targetUsername.replace('@', '').toLowerCase();
-    if (cleanUsername === currentUser.username) {
-        setActiveChatId(SAVED_MESSAGES_ID);
-        return;
+      user = users[data.username.toLowerCase()] || null;
     }
     
-    const users = JSON.parse(localStorage.getItem('gram_users') || '{}');
-    const targetUser = users[cleanUsername];
-
-    if (!targetUser) {
-        alert("کاربری با این یوزرنیم پیدا نشد!");
-        return;
-    }
-
-    const existingChat = chats.find(c => c.type === 'private' && c.participants.some(p => p.username === cleanUsername));
-    if (existingChat) {
-        setActiveChatId(existingChat.id);
-    } else {
-        const newChat: Chat = {
-            id: `chat_${Math.random().toString(36).substr(2, 9)}`,
-            type: 'private',
-            participants: [currentUser, targetUser],
-            messages: [],
-            unreadCount: 0,
-            pinnedMessages: []
-        };
-        setChats(prev => [newChat, ...prev]);
-        setActiveChatId(newChat.id);
+    if (user) {
+      setCurrentUser(user);
+      localStorage.setItem('starly_session', JSON.stringify(user));
     }
   };
 
-  const createGroup = (name: string, selectedUsernames: string[]) => {
-    if (!currentUser) return;
-    const users = JSON.parse(localStorage.getItem('gram_users') || '{}');
-    const participants = [currentUser, ...selectedUsernames.map(u => users[u]).filter(Boolean)];
-    
-    const newGroup: Chat = {
-        id: `group_${Math.random().toString(36).substr(2, 9)}`,
-        type: 'group',
-        groupName: name,
-        groupAvatar: `https://api.dicebear.com/7.x/initials/svg?seed=${name}`,
-        participants,
-        messages: [{ id: 'sys1', senderId: 'system', text: `گروه ${name} ایجاد شد.`, timestamp: Date.now() }],
+  const startChat = (targetUser: User) => {
+    if (!currentUser || !targetUser) return;
+    if (targetUser.username === currentUser.username || targetUser.id === SAVED_MESSAGES_ID) {
+      setActiveChatId(SAVED_MESSAGES_ID);
+      return;
+    }
+    const existing = chats.find(c => c.type === 'private' && c.participants.some(p => p && p.id === targetUser.id));
+    if (existing) {
+      setActiveChatId(existing.id);
+    } else {
+      const newChat: Chat = {
+        id: targetUser.id === AI_BOT.id ? AI_BOT.id : `c_${Date.now()}`,
+        type: targetUser.id === AI_BOT.id ? 'bot' : 'private',
+        participants: [currentUser, targetUser],
+        messages: [],
         unreadCount: 0,
         pinnedMessages: []
-    };
-    setChats(prev => [newGroup, ...prev]);
-    setActiveChatId(newGroup.id);
+      };
+      updateChats([newChat, ...chats]);
+      setActiveChatId(newChat.id);
+    }
   };
 
-  const sendMessage = async (text: string, replyTo?: string) => {
+  const handleMessageAction = async (action: any, payload: any) => {
     if (!currentUser || !activeChatId) return;
 
-    const newMessage: Message = {
-      id: Math.random().toString(36).substr(2, 9),
-      senderId: currentUser.id,
-      text,
-      timestamp: Date.now(),
-      replyTo
-    };
-
-    setChats(prev => prev.map(chat => {
-      if (chat.id === activeChatId) {
-        return { 
-          ...chat, 
-          messages: [...chat.messages, newMessage], 
-          lastMessage: newMessage,
-          unreadCount: 0 
+    let updatedChats = chats.map(chat => {
+      if (chat.id !== activeChatId) return chat;
+      const newChat = { ...chat };
+      if (action === 'send') {
+        const msg: Message = {
+          id: `m_${Date.now()}`,
+          senderId: currentUser.id,
+          text: payload.text,
+          imageUrl: payload.imageUrl,
+          replyToId: payload.replyToId,
+          timestamp: Date.now(),
+          isRead: false
         };
+        newChat.messages = [...newChat.messages, msg];
+        newChat.lastMessage = msg;
+        newChat.unreadCount = 0;
+      } else if (action === 'delete') {
+        newChat.messages = newChat.messages.filter(m => m.id !== payload.id);
+      } else if (action === 'react') {
+        newChat.messages = newChat.messages.map(m => {
+          if (m.id !== payload.id) return m;
+          const reactions = m.reactions || [];
+          const idx = reactions.findIndex(r => r.emoji === payload.emoji);
+          if (idx > -1) {
+             const r = reactions[idx];
+             if (r.users.includes(currentUser.id)) {
+               r.users = r.users.filter(u => u !== currentUser.id);
+               r.count--;
+             } else {
+               r.users.push(currentUser.id);
+               r.count++;
+             }
+             if (r.count <= 0) reactions.splice(idx, 1);
+          } else {
+            reactions.push({ emoji: payload.emoji, count: 1, users: [currentUser.id] });
+          }
+          return { ...m, reactions: [...reactions] };
+        });
+      } else if (action === 'updateSettings') {
+        return { ...newChat, ...payload };
+      } else if (action === 'addParticipant') {
+        const alreadyIn = newChat.participants.some(p => p.id === payload.id);
+        if (!alreadyIn) {
+          newChat.participants = [...newChat.participants, payload];
+          newChat.messages = [...newChat.messages, {
+            id: `sys_${Date.now()}`,
+            senderId: 'system',
+            text: `${payload.displayName} به گفتگو پیوست.`,
+            timestamp: Date.now()
+          }];
+        }
       }
-      return chat;
-    }));
+      return newChat;
+    });
 
-    if (activeChatId === AI_BOT.id) {
+    if (activeChatId === SAVED_MESSAGES_ID && !chats.find(c => c.id === SAVED_MESSAGES_ID)) {
+      const savedChat: Chat = {
+        id: SAVED_MESSAGES_ID,
+        type: 'saved',
+        participants: [currentUser],
+        messages: action === 'send' ? [{
+          id: `m_${Date.now()}`,
+          senderId: currentUser.id,
+          text: payload.text,
+          timestamp: Date.now()
+        }] : [],
+        unreadCount: 0,
+        pinnedMessages: []
+      };
+      updatedChats = [savedChat, ...chats];
+    }
+
+    updateChats(updatedChats);
+
+    if (action === 'send' && activeChatId === AI_BOT.id) {
       setIsTyping(true);
-      const activeChat = chats.find(c => c.id === AI_BOT.id);
-      const history = (activeChat?.messages || []).slice(-15).map(m => ({
+      const history = (updatedChats.find(c => c.id === AI_BOT.id)?.messages || []).slice(-10).map(m => ({
         role: m.senderId === currentUser.id ? 'user' as const : 'model' as const,
         text: m.text
       }));
-
-      const aiMsgId = Math.random().toString(36).substr(2, 9);
+      const aiMsgId = `ai_${Date.now()}`;
       let fullText = "";
-
-      setChats(prev => prev.map(chat => {
-        if (chat.id === AI_BOT.id) {
-          const aiPlaceholder: Message = { id: aiMsgId, senderId: AI_BOT.id, text: "", timestamp: Date.now(), isAi: true };
-          return { ...chat, messages: [...chat.messages, aiPlaceholder] };
+      try {
+        const stream = gemini.getChatResponseStream(payload.text, history);
+        for await (const chunk of stream) {
+          fullText += chunk;
+          setChats(prev => prev.map(c => c.id === AI_BOT.id ? {
+            ...c,
+            messages: c.messages.some(m => m.id === aiMsgId)
+              ? c.messages.map(m => m.id === aiMsgId ? { ...m, text: fullText } : m)
+              : [...c.messages, { id: aiMsgId, senderId: AI_BOT.id, text: fullText, timestamp: Date.now(), isAi: true }]
+          } : c));
         }
-        return chat;
-      }));
-
-      const stream = gemini.getChatResponseStream(text, history);
-      for await (const chunk of stream) {
-        fullText += chunk;
-        setChats(prev => prev.map(chat => {
-          if (chat.id === AI_BOT.id) {
-            return {
-              ...chat,
-              messages: chat.messages.map(m => m.id === aiMsgId ? { ...m, text: fullText } : m)
-            };
-          }
-          return chat;
-        }));
+      } catch (e) { console.error(e); } finally {
+        setIsTyping(false);
+        const saved = JSON.parse(localStorage.getItem(`chats_${currentUser.id}`) || '[]');
+        updateChats(saved);
       }
-      setIsTyping(false);
     }
+  };
+
+  const getActiveChat = () => {
+    if (!activeChatId || !currentUser) return null;
+    if (activeChatId === SAVED_MESSAGES_ID) {
+      const chat = chats.find(c => c.id === SAVED_MESSAGES_ID);
+      if (chat) return chat;
+      return { 
+        id: SAVED_MESSAGES_ID, 
+        type: 'saved', 
+        participants: [currentUser], 
+        messages: [], 
+        pinnedMessages: [], 
+        unreadCount: 0 
+      } as Chat;
+    }
+    const found = chats.find(c => c.id === activeChatId);
+    if (found) return found;
+    if (activeChatId === AI_BOT.id) {
+      return { 
+        id: AI_BOT.id, 
+        type: 'bot', 
+        participants: [currentUser, AI_BOT], 
+        messages: [], 
+        pinnedMessages: [], 
+        unreadCount: 0 
+      } as Chat;
+    }
+    return null;
+  };
+
+  const createGroupOrChannel = (type: 'group' | 'channel', name: string, description: string) => {
+    if (!currentUser) return;
+    const newChat: Chat = {
+      id: `${type === 'group' ? 'g' : 'ch'}_${Date.now()}`,
+      type: type,
+      groupName: name,
+      description: description,
+      groupAvatar: `https://api.dicebear.com/7.x/initials/svg?seed=${name}`,
+      participants: [currentUser],
+      adminId: currentUser.id,
+      admins: { [currentUser.id]: {
+        canChangeInfo: true,
+        canDeleteMessages: true,
+        canBanUsers: true,
+        canInviteUsers: true,
+        canPinMessages: true,
+        canAddAdmins: true
+      }},
+      messages: [{ id: `m_${Date.now()}`, senderId: 'system', text: `${type === 'group' ? 'گروه' : 'کانال'} "${name}" ایجاد شد.`, timestamp: Date.now() }],
+      unreadCount: 0,
+      pinnedMessages: [],
+      permissions: {
+        canSendMessages: true,
+        canSendMedia: true,
+        canAddUsers: true,
+        canPinMessages: true,
+        canChangeInfo: true
+      },
+      isReadOnlyForMembers: type === 'channel' ? true : false
+    };
+    updateChats([newChat, ...chats]);
+    setActiveChatId(newChat.id);
   };
 
   if (!currentUser) return <Login onLogin={handleAuth} />;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#0e1621] text-white font-sans selection:bg-[#3390ec]/30" dir="rtl">
+    <div className="flex h-screen w-full bg-[#0e1621] text-white overflow-hidden" dir="rtl">
       <Sidebar 
         chats={chats} 
         activeChatId={activeChatId} 
@@ -226,37 +311,39 @@ const App: React.FC = () => {
         activeFolder={activeFolder}
         setActiveFolder={setActiveFolder}
         onOpenSettings={() => setShowSettings(true)}
-        onLogout={() => { setCurrentUser(null); localStorage.removeItem('gram_session'); }}
-        onCreateGroup={createGroup}
+        onLogout={() => { 
+          localStorage.removeItem('starly_session');
+          setCurrentUser(null);
+        }}
+        onStartChat={startChat}
+        onCreateGroup={(name, desc) => createGroupOrChannel('group', name, desc)}
+        onCreateChannel={(name, desc) => createGroupOrChannel('channel', name, desc)}
       />
-      <div className="flex-1 flex flex-col min-w-0 bg-[#0e1621]">
-        <ChatArea 
-          chat={chats.find(c => c.id === activeChatId) || null} 
-          currentUser={currentUser} 
-          onSendMessage={sendMessage}
-          isTyping={isTyping}
-          onTogglePin={(id) => {
-            setChats(prev => prev.map(c => c.id === activeChatId ? {...c, pinnedMessages: c.pinnedMessages.includes(id) ? c.pinnedMessages.filter(x => x!==id) : [...c.pinnedMessages, id]} : c))
-          }}
-          onDeleteMessage={(id) => {
-            setChats(prev => prev.map(c => c.id === activeChatId ? {...c, messages: c.messages.filter(m => m.id !== id)} : c))
-          }}
-          onDeleteHistory={() => setChats(prev => prev.map(c => c.id === activeChatId ? {...c, messages: [], lastMessage: undefined} : c))}
-          onMentionClick={startChatWithUsername}
-        />
-      </div>
+      
+      <ChatArea 
+        chat={getActiveChat()} 
+        currentUser={currentUser} 
+        isTyping={isTyping}
+        onAction={handleMessageAction}
+        onMentionClick={(username) => {
+          const usersObj = JSON.parse(localStorage.getItem('starly_users') || '{}');
+          const cleanUsername = username.replace('@','').toLowerCase();
+          const u = Object.values(usersObj).find((user: any) => user && user.username.toLowerCase() === cleanUsername) as User;
+          if (u) startChat(u);
+        }}
+        onDeleteChat={() => updateChats(chats.filter(c => c.id !== activeChatId))}
+      />
 
       {showSettings && (
         <SettingsModal 
           user={currentUser} 
           onClose={() => setShowSettings(false)} 
-          onLogout={() => { setCurrentUser(null); localStorage.removeItem('gram_session'); }}
           onUpdateUser={(updated) => {
             setCurrentUser(updated);
-            localStorage.setItem('gram_session', JSON.stringify(updated));
-            const users = JSON.parse(localStorage.getItem('gram_users') || '{}');
+            const users = JSON.parse(localStorage.getItem('starly_users') || '{}');
             users[updated.username] = updated;
-            localStorage.setItem('gram_users', JSON.stringify(users));
+            localStorage.setItem('starly_users', JSON.stringify(users));
+            localStorage.setItem('starly_session', JSON.stringify(updated));
           }}
         />
       )}

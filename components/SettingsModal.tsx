@@ -1,83 +1,95 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { User } from '../types';
-import { X, Camera, Save, LogOut, Shield, Bell, HelpCircle, User as UserIcon, Check, Eye, EyeOff, Lock } from 'lucide-react';
+import { X, Shield, Key, Check, Smartphone, Lock, Camera, ShieldAlert } from 'lucide-react';
 
 interface SettingsModalProps {
   user: User;
   onClose: () => void;
-  onLogout: () => void;
   onUpdateUser: (updated: User) => void;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onLogout, onUpdateUser }) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'privacy'>('profile');
+const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUser }) => {
+  const [activeTab, setActiveTab] = useState<'profile' | '2fa' | 'security'>('profile');
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio || '');
-  const [avatar, setAvatar] = useState(user.avatar);
-  // Fix: Explicitly type the privacy state to match the User's privacy definition and prevent type widening of string literals.
-  const [privacy, setPrivacy] = useState<NonNullable<User['privacy']>>(
-    user.privacy || { showStatus: 'all', showAvatar: 'all', showBio: 'all' }
-  );
-  
-  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [twoFAEnabled, setTwoFAEnabled] = useState(user.twoFactorEnabled || false);
 
   const handleSave = () => {
-    onUpdateUser({ ...user, displayName, bio, avatar, privacy });
+    onUpdateUser({ ...user, displayName, bio, twoFactorEnabled: twoFAEnabled });
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-[450px] bg-[#17212b] rounded-3xl overflow-hidden shadow-2xl border border-[#242f3d]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in">
+      <div className="w-full max-w-md bg-[#17212b] rounded-3xl overflow-hidden border border-[#242f3d] shadow-2xl">
         <div className="p-4 border-b border-[#0e1621] flex items-center justify-between bg-[#242f3d]">
-          <h3 className="font-bold text-lg text-white">تنظیمات استارلی جت</h3>
-          <button onClick={onClose} className="p-2 text-[#708499]"><X /></button>
+          <h3 className="font-bold text-white">تنظیمات کاربری</h3>
+          <button onClick={onClose} className="p-2 text-[#708499] hover:text-white transition-colors"><X /></button>
         </div>
 
-        <div className="flex border-b border-[#0e1621]">
-            <button onClick={() => setActiveTab('profile')} className={`flex-1 py-3 font-bold ${activeTab==='profile' ? 'text-[#3390ec] border-b-2 border-[#3390ec]' : 'text-[#708499]'}`}>پروفایل</button>
-            <button onClick={() => setActiveTab('privacy')} className={`flex-1 py-3 font-bold ${activeTab==='privacy' ? 'text-[#3390ec] border-b-2 border-[#3390ec]' : 'text-[#708499]'}`}>حریم خصوصی</button>
+        <div className="flex bg-[#17212b]">
+          {['profile', '2fa', 'security'].map((t: any) => (
+            <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-3 text-xs font-bold transition-all ${activeTab===t ? 'text-[#3390ec] border-b-2 border-[#3390ec]' : 'text-[#708499] hover:text-white/60'}`}>
+              {t === 'profile' ? 'پروفایل' : t === '2fa' ? 'تأیید ۲مرحله‌ای' : 'امنیت'}
+            </button>
+          ))}
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[70vh] no-scrollbar">
-          {activeTab === 'profile' ? (
-            <div className="space-y-6">
-                <div className="flex flex-col items-center">
-                    <div className="relative group cursor-pointer mb-4" onClick={() => avatarInputRef.current?.click()}>
-                        <img src={avatar} className="w-24 h-24 rounded-full border-2 border-[#3390ec] object-cover" />
-                        <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center"><Camera className="text-white" /></div>
-                        <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={e => {const f=e.target.files?.[0]; if(f){const r=new FileReader(); r.onloadend=()=>setAvatar(r.result as string); r.readAsDataURL(f);}}} />
-                    </div>
-                    <h4 className="text-xl font-bold">{displayName}</h4>
-                    <p className="text-[#3390ec]">@{user.username}</p>
+        <div className="p-6 space-y-6">
+          {activeTab === 'profile' && (
+            <div className="space-y-4 animate-in slide-in-from-left duration-300">
+              <div className="flex flex-col items-center">
+                <div className="relative group">
+                  <img src={user.avatar} className="w-20 h-20 rounded-full mb-4 border-2 border-[#3390ec] object-cover group-hover:brightness-50 transition-all" />
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all pointer-events-none">
+                    <Camera size={20} className="text-white"/>
+                  </div>
                 </div>
-                <div className="space-y-4">
-                    <div className="space-y-1">
-                        <label className="text-xs text-[#708499] font-bold">نام نمایشی</label>
-                        <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="w-full bg-[#242f3d] p-3 rounded-xl border-none text-white focus:ring-1 focus:ring-[#3390ec]" />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-xs text-[#708499] font-bold">بایوگرافی</label>
-                        <textarea value={bio} onChange={e => setBio(e.target.value)} className="w-full bg-[#242f3d] p-3 rounded-xl border-none text-white h-24 resize-none" />
-                    </div>
-                </div>
-            </div>
-          ) : (
-            <div className="space-y-6">
-                <div className="p-4 bg-[#242f3d] rounded-2xl flex items-center gap-4 text-[#3390ec]"><Shield size={32}/><p className="text-sm font-medium">امنیت شما در استارلی جت اولویت ماست. تمامی پیام‌ها رمزنگاری می‌شوند.</p></div>
-                <div className="space-y-4">
-                    <PrivacyOption icon={<Eye/>} label="نمایش وضعیت آنلاین" value={privacy.showStatus} onChange={v => setPrivacy({...privacy, showStatus: v})} />
-                    <PrivacyOption icon={<UserIcon/>} label="نمایش عکس پروفایل" value={privacy.showAvatar} onChange={v => setPrivacy({...privacy, showAvatar: v})} />
-                    <PrivacyOption icon={<HelpCircle/>} label="نمایش بیوگرافی" value={privacy.showBio} onChange={v => setPrivacy({...privacy, showBio: v})} />
-                </div>
-                <button className="w-full py-3 bg-[#242f3d] rounded-xl flex items-center justify-center gap-2 font-bold text-white"><Lock size={18}/> فعال‌سازی تایید دو مرحله‌ای</button>
+                <h4 className="font-bold text-lg">@{user.username}</h4>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-[#3390ec] uppercase pr-1">نام نمایشی</label>
+                <input value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="نام نمایشی" className="w-full bg-[#242f3d] p-3 rounded-xl text-white outline-none border border-transparent focus:border-[#3390ec]/40" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-[#3390ec] uppercase pr-1">درباره شما (Bio)</label>
+                <textarea value={bio} onChange={e=>setBio(e.target.value)} placeholder="توضیح کوتاهی درباره خودتان بنویسید..." className="w-full bg-[#242f3d] p-3 rounded-xl text-white h-24 resize-none border border-transparent focus:border-[#3390ec]/40 no-scrollbar" />
+              </div>
             </div>
           )}
 
-          <div className="mt-8 flex gap-3">
-            <button onClick={handleSave} className="flex-1 py-3 bg-[#3390ec] rounded-xl font-bold flex items-center justify-center gap-2"><Check /> ذخیره</button>
-            <button onClick={onLogout} className="px-4 py-3 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all"><LogOut /></button>
+          {activeTab === '2fa' && (
+            <div className="space-y-6 text-center animate-in slide-in-from-left duration-300">
+              <ShieldAlert className="mx-auto text-yellow-500 mb-2" size={48} />
+              <p className="text-sm text-[#708499] leading-relaxed">با فعال‌سازی این قابلیت، امنیت حساب شما دوچندان می‌شود. هنگام ورود مجدد، به کد تایید نیاز خواهید داشت.</p>
+              <div className={`p-5 rounded-2xl border-2 transition-all ${twoFAEnabled ? 'bg-green-500/10 border-green-500/50' : 'bg-red-500/10 border-red-500/50'}`}>
+                <p className="font-bold mb-4 text-sm">{twoFAEnabled ? 'تأیید ۲مرحله‌ای فعال است' : 'تأیید ۲مرحله‌ای غیرفعال است'}</p>
+                <button onClick={()=>setTwoFAEnabled(!twoFAEnabled)} className={`px-8 py-2.5 rounded-xl font-bold text-white transition-all transform active:scale-95 ${twoFAEnabled ? 'bg-red-500 hover:bg-red-600' : 'bg-green-600 hover:bg-green-700'}`}>
+                  {twoFAEnabled ? 'غیرفعال‌سازی' : 'فعال‌سازی'}
+                </button>
+              </div>
+              {!twoFAEnabled && (
+                <div className="text-right text-xs bg-black/40 p-4 rounded-xl border border-[#3390ec]/20">
+                   <p className="font-bold text-[#3390ec] mb-2 flex items-center gap-2"><Key size={14}/> کد راه‌اندازی (نسخه بتا):</p>
+                   <code className="text-white select-all bg-[#17212b] px-3 py-1.5 rounded block text-center font-mono tracking-widest">STARLY-777-BETA</code>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'security' && (
+            <div className="space-y-3 animate-in slide-in-from-left duration-300">
+               <SecurityItem icon={<Key size={18}/>} label="تغییر رمز عبور" />
+               <SecurityItem icon={<Smartphone size={18}/>} label="مدیریت نشست‌های فعال" />
+               <SecurityItem icon={<Lock size={18}/>} label="قفل برنامه (Passcode)" />
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-[#0e1621]">
+            <button onClick={handleSave} className="w-full py-4 bg-[#3390ec] hover:bg-[#2881d9] rounded-2xl font-bold flex items-center justify-center gap-2 shadow-xl text-white transition-all transform active:scale-95">
+              <Check size={20} /> ذخیره و اعمال تغییرات
+            </button>
           </div>
         </div>
       </div>
@@ -85,17 +97,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onLogout, 
   );
 };
 
-const PrivacyOption: React.FC<{icon:any, label:string, value:string, onChange:(v:any)=>void}> = ({icon, label, value, onChange}) => (
-    <div className="space-y-2">
-        <div className="flex items-center gap-3 text-[#708499] mb-1">{icon}<span className="text-sm font-bold">{label}</span></div>
-        <div className="flex bg-[#242f3d] rounded-xl p-1">
-            {['all', 'contacts', 'none'].map(v => (
-                <button key={v} onClick={() => onChange(v)} className={`flex-1 py-1.5 text-xs rounded-lg transition-all ${value===v ? 'bg-[#3390ec] text-white shadow-lg' : 'text-[#708499]'}`}>
-                    {v === 'all' ? 'همه' : v === 'contacts' ? 'مخاطبین' : 'هیچکس'}
-                </button>
-            ))}
-        </div>
+const SecurityItem = ({icon, label}: any) => (
+  <div className="flex items-center justify-between p-4 bg-[#242f3d] rounded-xl cursor-pointer hover:bg-[#2b3949] border border-white/5 transition-colors group">
+    <div className="flex items-center gap-3">
+      <span className="text-[#3390ec] group-hover:scale-110 transition-transform">{icon}</span>
+      <span className="text-sm font-medium">{label}</span>
     </div>
+    <Smartphone size={14} className="text-[#708499] rotate-180 opacity-0 group-hover:opacity-100 transition-all"/>
+  </div>
 );
 
 export default SettingsModal;
