@@ -5,6 +5,19 @@ export interface Reaction {
   users: string[];
 }
 
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: string[]; // User IDs
+}
+
+export interface Poll {
+  question: string;
+  options: PollOption[];
+  isMultipleChoice: boolean;
+  totalVotes: number;
+}
+
 export interface Message {
   id: string;
   senderId: string;
@@ -13,10 +26,12 @@ export interface Message {
   isAi?: boolean;
   replyToId?: string;
   isEdited?: boolean;
-  isDeleted?: boolean;
   reactions?: Reaction[];
   imageUrl?: string;
+  audioUrl?: string;
+  poll?: Poll;
   isRead?: boolean;
+  forwardedFrom?: string;
 }
 
 export interface AdminPermissions {
@@ -45,11 +60,12 @@ export interface User {
   status: 'online' | 'offline' | 'typing...';
   bio?: string;
   twoFactorEnabled?: boolean;
-  twoFactorSecret?: string;
-  privacy?: {
-    showStatus: 'all' | 'contacts' | 'none';
-    showAvatar: 'all' | 'contacts' | 'none';
-    showBio: 'all' | 'contacts' | 'none';
+  passcode?: string;
+  theme: 'day' | 'night' | 'oled' | 'arctic';
+  wallpaper: string;
+  privacy: {
+    showStatus: 'all' | 'none';
+    showAvatar: 'all' | 'none';
   };
 }
 
@@ -59,18 +75,17 @@ export interface Chat {
   participants: User[];
   messages: Message[];
   lastMessage?: Message;
-  pinnedMessages: string[];
-  isPinned?: boolean;
+  pinnedMessageIds: string[];
+  isPinnedInSidebar?: boolean;
   unreadCount: number;
   groupName?: string;
   groupAvatar?: string;
   description?: string;
-  adminId?: string; // Owner
-  admins?: Record<string, AdminPermissions>; // Map of UserID to Permissions
+  adminId?: string;
+  admins?: Record<string, AdminPermissions>;
   permissions?: Permissions;
   inviteLink?: string;
   slowMode?: number;
-  isReadOnlyForMembers?: boolean;
 }
 
 export type FolderType = 'all' | 'private' | 'groups' | 'channels' | 'saved';

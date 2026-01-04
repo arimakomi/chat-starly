@@ -1,119 +1,180 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Chat, User, Message, Permissions, AdminPermissions } from '../types';
-import { Send, Paperclip, Smile, MessageCircle, Bookmark, CheckCheck, Trash, Mic, Info, Settings, Shield, UserMinus, UserPlus, Clock, X, ChevronLeft, Link, UserCheck, Image as ImageIcon, Copy, Check } from 'lucide-react';
+import { Chat, User, Message } from '../types';
+import { 
+  Send, Paperclip, Smile, MessageCircle, Trash, Mic, Info, X, 
+  ChevronLeft, UserMinus, UserPlus, Image as ImageIcon, 
+  Pin, Reply, BarChart2, Volume2, Square, Plus, CheckCheck, MoreVertical,
+  Link as LinkIcon, Edit3, Shield, Copy, Users, Bookmark, RotateCcw, Clock, Lock, ArrowRight, Link
+} from 'lucide-react';
 
 interface ChatAreaProps {
   chat: Chat | null;
   currentUser: User;
   isTyping: boolean;
-  onAction: (action: any, payload: any) => void;
-  onMentionClick: (username: string) => void;
+  onAction: (action: string, payload: any) => void;
   onDeleteChat: () => void;
+  onBack: () => void;
+  onUsernameClick: (username: string) => void;
 }
 
-const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onAction, onMentionClick, onDeleteChat }) => {
+const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onAction, onDeleteChat, onBack, onUsernameClick }) => {
   const [inputText, setInputText] = useState('');
   const [showInfo, setShowInfo] = useState(false);
-  const [showAdminSettings, setShowAdminSettings] = useState(false);
-  const [showPromoteModal, setShowPromoteModal] = useState<User | null>(null);
-  const [showAddMember, setShowAddMember] = useState(false);
-  const [memberSearch, setMemberSearch] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  
+  // Admin Edit States
+  const [editTab, setEditTab] = useState<'info' | 'permissions'>('info');
+  const [isEditingInfo, setIsEditingInfo] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editSlowMode, setEditSlowMode] = useState(0);
+  
   const msgEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   useEffect(() => {
     msgEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    setShowInfo(false);
-    setShowAdminSettings(false);
-    setShowAddMember(false);
-  }, [chat?.id]);
+    if(chat) {
+       setEditName(chat.groupName || '');
+       setEditDesc(chat.description || '');
+       setEditSlowMode(chat.slowMode || 0);
+    }
+  }, [chat?.messages.length, isTyping, chat?.id]);
 
-  const allUsers = useMemo(() => {
-    const usersObj = JSON.parse(localStorage.getItem('starly_users') || '{}');
-    return Object.values(usersObj).filter(Boolean) as User[];
-  }, []);
+  // Derived State for Chat Info
+  const chatInfo = useMemo(() => {
+    if (!chat) return null;
+    if (chat.type === 'saved') {
+      return {
+        title: 'پیام‌های ذخیره شده',
+        avatar: null, // Will render bookmark icon
+        status: 'پیام‌های شخصی شما',
+        isSaved: true
+      };
+    }
+    const otherParticipant = chat.participants.find(p => p.id !== currentUser.id);
+    if (chat.type === 'private') {
+      return {
+        title: otherParticipant?.displayName || 'کاربر حذف شده',
+        avatar: otherParticipant?.avatar,
+        status: isTyping ? 'درحال نوشتن...' : (otherParticipant?.status === 'online' ? 'آنلاین' : 'آخرین بازدید به تازگی'),
+        isSaved: false
+      };
+    }
+    return {
+      title: chat.groupName,
+      avatar: chat.groupAvatar,
+      status: isTyping ? 'درحال نوشتن...' : `${chat.participants.length} عضو`,
+      isSaved: false
+    };
+  }, [chat, currentUser, isTyping]);
 
-  if (!chat) return (
-    <div className="flex-1 flex flex-col items-center justify-center bg-[#0e1621]">
-      <div className="p-10 text-center">
-         <div className="w-20 h-20 bg-[#1c2732] rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl">
-           <MessageCircle className="text-[#2b5278]" size={32}/>
-         </div>
-         <h2 className="text-2xl font-bold mb-2">Starly Chat Pro</h2>
-         <p className="text-[#708499] max-w-xs mx-auto">یک گفتگو را انتخاب کنید تا چت را شروع کنیم.</p>
+  if (!chat || !chatInfo) return (
+    <div className="flex-1 flex flex-col items-center justify-center bg-[#0e1621] text-[#708499]">
+      <div className="bg-[#17212b] p-8 rounded-full mb-4 shadow-2xl animate-pulse">
+        <MessageCircle size={64} className="opacity-30 text-[#3390ec]" />
       </div>
+      <h2 className="text-xl font-bold text-white mb-2">به استارلی چت خوش آمدید</h2>
+      <p className="text-sm font-medium opacity-60">یک گفتگو را برای شروع پیام‌رسانی انتخاب کنید</p>
     </div>
   );
 
-  const isAdmin = chat.adminId === currentUser.id || (chat.admins && chat.admins[currentUser.id]);
-  const isOwner = chat.adminId === currentUser.id;
-  const isSaved = chat.id === 'saved-messages';
-  const other = chat.participants.find(p => p && p.id !== currentUser.id);
-  const title = isSaved ? 'پیام‌های ذخیره شده' : (chat.type === 'group' || chat.type === 'channel' ? chat.groupName : other?.displayName);
-  const isReadOnly = chat.type === 'channel' && !isAdmin;
+  const isAdmin = chat.adminId === currentUser.id;
+  const isChannel = chat.type === 'channel';
+  const isGroup = chat.type === 'group';
+  const other = chat.participants.find(p => p.id !== currentUser.id);
 
-  const handleSendMessage = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (inputText.trim()) {
-      onAction('send', { text: inputText });
-      setInputText('');
-    }
+  const handleSend = () => {
+    if (!inputText.trim()) return;
+    onAction('send', { text: inputText, replyToId: replyingTo?.id });
+    setInputText('');
+    setReplyingTo(null);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
-  const updateSettings = (key: string, value: any) => {
-    if (!isAdmin) return;
-    onAction('updateSettings', { [key]: value });
-  };
-
-  const promoteToAdmin = (targetUser: User) => {
-    const defaultPerms: AdminPermissions = {
-      canChangeInfo: true,
-      canDeleteMessages: true,
-      canBanUsers: true,
-      canInviteUsers: true,
-      canPinMessages: true,
-      canAddAdmins: false
-    };
-    const newAdmins = { ...(chat.admins || {}), [targetUser.id]: defaultPerms };
-    onAction('updateSettings', { admins: newAdmins });
-    setShowPromoteModal(null);
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && isAdmin) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateSettings('groupAvatar', reader.result);
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const scale = Math.min(1, MAX_WIDTH / img.width);
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        onAction('send', { text: 'تصویر', imageUrl: canvas.toDataURL('image/jpeg', 0.8) });
       };
-      reader.readAsDataURL(file);
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const toggleRecording = async () => {
+    if (!isRecording) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+        const chunks: Blob[] = [];
+        recorder.ondataavailable = (e) => chunks.push(e.data);
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const reader = new FileReader();
+          reader.onloadend = () => onAction('send', { text: 'پیام صوتی', audioUrl: reader.result });
+          reader.readAsDataURL(blob);
+          stream.getTracks().forEach(t => t.stop());
+        };
+        recorder.start();
+        setIsRecording(true);
+      } catch (err) {
+        alert('دسترسی به میکروفون مسدود است.');
+      }
+    } else {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
     }
   };
 
-  const renderText = (text: string) => {
-    const parts = text.split(/(@[a-zA-Z0-9_]+)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('@')) {
+  const saveInfo = () => {
+    onAction('updateChatInfo', { 
+      groupName: editName, 
+      description: editDesc,
+      slowMode: editSlowMode 
+    });
+    setIsEditingInfo(false);
+  };
+
+  const regenerateInviteLink = () => {
+    const newLink = `https://chat.starly.ir/join/${Math.random().toString(36).substring(2, 12)}`;
+    onAction('updateSettings', { inviteLink: newLink });
+  };
+
+  const copyMessageLink = (msgId: string) => {
+    const link = `https://chat.starly.ir/c/${chat.id}/${msgId}`;
+    navigator.clipboard.writeText(link);
+    alert('لینک پیام با موفقیت کپی شد!');
+  };
+
+  // Helper to render text with clickable @mentions
+  const renderMessageText = (text: string) => {
+    const parts = text.split(/(@\w+)/g);
+    return parts.map((part, index) => {
+      if (part.match(/@\w+/)) {
         return (
           <span 
-            key={i} 
-            className="text-[#3390ec] cursor-pointer hover:underline font-bold" 
-            onClick={() => onMentionClick(part)}
+            key={index} 
+            className="text-[#3390ec] font-bold cursor-pointer hover:underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUsernameClick(part);
+            }}
           >
             {part}
           </span>
@@ -123,247 +184,296 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
     });
   };
 
-  const filteredNewMembers = allUsers.filter(u => 
-    !chat.participants.some(p => p.id === u.id) &&
-    (u.username.toLowerCase().includes(memberSearch.toLowerCase()) || 
-     u.displayName.toLowerCase().includes(memberSearch.toLowerCase()))
-  );
-
   return (
-    <div className="flex-1 flex flex-col h-screen bg-[#0e1621] relative overflow-hidden">
+    <div className="flex-1 flex flex-col h-screen bg-[#0e1621] relative overflow-hidden chat-wallpaper">
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-4 bg-[#17212b]/90 backdrop-blur-md border-b border-[#0e1621] z-10">
-        <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={() => setShowInfo(!showInfo)}>
-          {isSaved ? <div className="w-10 h-10 bg-[#3390ec] rounded-full flex items-center justify-center shadow-lg"><Bookmark size={20}/></div>
-                  : <img src={chat.type === 'group' || chat.type === 'channel' ? chat.groupAvatar : other?.avatar} className="w-10 h-10 rounded-full object-cover border border-white/10" />}
-          <div className="flex-1">
-            <h3 className="font-bold text-sm truncate">{title}</h3>
-            <p className="text-[10px] text-[#708499]">{isTyping ? 'درحال نوشتن...' : (chat.type === 'channel' ? `${chat.participants.length} مشترک` : 'آنلاین')}</p>
+      <header className="h-16 flex items-center justify-between px-4 bg-[#17212b]/95 backdrop-blur-lg border-b border-black/20 z-20 shadow-sm">
+        <div className="flex items-center gap-1 overflow-hidden">
+          {/* Back Button for Mobile */}
+          <button onClick={onBack} className="md:hidden p-2 mr-1 text-[#708499] hover:text-white">
+            <ArrowRight size={24} />
+          </button>
+          
+          <div className="flex items-center gap-3 cursor-pointer group flex-1" onClick={() => setShowInfo(true)}>
+            <div className="relative shrink-0">
+              {chatInfo.isSaved ? (
+                <div className="w-10 h-10 rounded-full bg-[#3390ec] flex items-center justify-center border border-white/10 shadow-lg">
+                  <Bookmark size={20} className="text-white fill-current"/>
+                </div>
+              ) : (
+                <img src={chatInfo.avatar || ''} className="w-10 h-10 rounded-full object-cover border border-white/10 group-hover:scale-105 transition-transform" />
+              )}
+              {chat.type === 'private' && chat.participants.find(p=>p.id!==currentUser.id)?.status === 'online' && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[#17212b]" />}
+            </div>
+            <div className="overflow-hidden">
+              <h3 className="font-bold text-[15px] leading-tight text-white truncate">{chatInfo.title}</h3>
+              <p className="text-[11px] text-[#3390ec] font-medium truncate">{chatInfo.status}</p>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && (chat.type === 'group' || chat.type === 'channel') && (
-            <button onClick={() => setShowAdminSettings(true)} className="p-2 text-[#708499] hover:text-[#3390ec] transition-colors"><Settings size={20}/></button>
-          )}
-          <button onClick={onDeleteChat} className="p-2 text-[#708499] hover:text-red-400 transition-colors"><Trash size={20}/></button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button onClick={() => setShowInfo(true)} className="p-2.5 text-[#708499] hover:bg-white/5 rounded-full transition-colors"><MoreVertical size={20}/></button>
         </div>
-      </div>
+      </header>
 
-      <div className="flex-1 relative flex">
-        {/* Messages Container */}
-        <div className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4 no-scrollbar bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-fixed opacity-90">
-          {chat.messages.map(msg => {
-            const isMe = msg.senderId === currentUser.id;
-            const isSystem = msg.senderId === 'system';
-            const sender = chat.participants.find(p => p.id === msg.senderId);
+      {/* Messages List */}
+      <main className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar pb-10">
+        {chat.messages.map((msg, idx) => {
+          const isMe = msg.senderId === currentUser.id;
+          return (
+            <div key={msg.id} className={`flex w-full animate-msg ${isMe ? 'justify-start' : 'justify-end'}`}>
+              
+              <div className="flex items-end gap-2 max-w-[85%] group">
+                
+                {/* Actions (Reply & Link) - Left Side */}
+                <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity self-center">
+                  <button 
+                    onClick={() => setReplyingTo(msg)} 
+                    className="p-1.5 bg-[#17212b]/50 hover:bg-[#3390ec] rounded-full text-[#708499] hover:text-white transition-colors shadow-sm"
+                    title="پاسخ"
+                  >
+                    <Reply size={14} className="scale-x-[-1]" />
+                  </button>
+                  <button 
+                    onClick={() => copyMessageLink(msg.id)} 
+                    className="p-1.5 bg-[#17212b]/50 hover:bg-[#3390ec] rounded-full text-[#708499] hover:text-white transition-colors shadow-sm"
+                    title="کپی لینک"
+                  >
+                    <LinkIcon size={14} />
+                  </button>
+                </div>
 
-            if (isSystem) return (
-              <div key={msg.id} className="flex justify-center w-full my-2">
-                <span className="bg-black/40 px-3 py-1 rounded-full text-[10px] text-white/60">{msg.text}</span>
-              </div>
-            );
-
-            return (
-              <div key={msg.id} className={`flex w-full ${isMe ? 'justify-start' : 'justify-end'}`}>
-                <div className={`relative max-w-[80%] px-4 py-2 rounded-2xl shadow-md group ${isMe ? 'bg-[#2b5278] rounded-tr-none' : 'bg-[#182533] rounded-tl-none'}`}>
-                  {!isMe && (chat.type === 'group' || chat.type === 'channel') && (
-                    <p className="text-[10px] font-bold text-[#3390ec] mb-1">{sender?.displayName || 'نامعلوم'}</p>
+                <div className={`message-bubble p-2.5 shadow-md relative flex-1 ${isMe ? 'bg-[#2b5278] rounded-2xl rounded-tr-none' : 'bg-[#182533] rounded-2xl rounded-tl-none text-white'}`}>
+                  {msg.replyToId && (
+                    <div className="mb-2 p-2 bg-black/20 rounded-lg border-r-2 border-[#3390ec] text-[10px] opacity-80 cursor-pointer hover:bg-black/30 transition-colors">
+                      <span className="text-[#3390ec] font-bold block mb-0.5">پاسخ به پیام</span>
+                      <span className="truncate block opacity-70">{chat.messages.find(m => m.id === msg.replyToId)?.text || 'پیام حذف شده'}</span>
+                    </div>
                   )}
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{renderText(msg.text)}</p>
-                  <div className="flex items-center justify-end gap-1 mt-1">
-                    <span className="text-[9px] opacity-50">{new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                  {msg.imageUrl && <img src={msg.imageUrl} className="rounded-xl mb-2 max-h-[400px] w-full object-cover shadow-inner" />}
+                  {msg.audioUrl && (
+                    <div className="flex items-center gap-3 min-w-[200px] py-2 px-1">
+                      <button className="bg-[#3390ec] p-2.5 rounded-full text-white shadow-lg hover:bg-[#2881d9] transition-colors"><Volume2 size={18}/></button>
+                      <div className="flex flex-col flex-1">
+                        <div className="h-1 bg-white/20 rounded-full overflow-hidden w-full mb-1">
+                          <div className="h-full bg-white/60 w-1/3" />
+                        </div>
+                        <span className="text-[10px] opacity-60">پیام صوتی</span>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-[14px] leading-relaxed whitespace-pre-wrap font-light">
+                    {renderMessageText(msg.text)}
+                  </p>
+                  <div className="flex items-center justify-end gap-1 mt-1 opacity-50 select-none">
+                    {msg.isEdited && <span className="text-[9px]">ویرایش شده</span>}
+                    <span className="text-[9px]">{new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                     {isMe && <CheckCheck size={12} className="text-[#3390ec]" />}
                   </div>
                 </div>
+
               </div>
-            );
-          })}
-          <div ref={msgEndRef} />
+            </div>
+          );
+        })}
+        <div ref={msgEndRef} />
+      </main>
+
+      {/* Input Bar */}
+      <footer className="p-3 bg-[#17212b]/95 backdrop-blur-xl border-t border-black/20 z-20">
+        {replyingTo && (
+          <div className="flex items-center justify-between bg-black/20 p-2 mb-2 rounded-xl border-r-4 border-[#3390ec] animate-in slide-in-from-bottom">
+            <div className="px-2 overflow-hidden">
+              <p className="text-[10px] text-[#3390ec] font-bold">پاسخ به {chat.participants.find(p=>p.id===replyingTo.senderId)?.displayName}</p>
+              <p className="text-xs truncate opacity-60 italic text-white">{replyingTo.text}</p>
+            </div>
+            <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-white/10 rounded-full"><X size={14} className="text-[#708499]"/></button>
+          </div>
+        )}
+        {(!isChannel || isAdmin || chatInfo.isSaved) ? (
+          <div className="flex items-end gap-2 max-w-5xl mx-auto">
+            <div className="flex-1 bg-[#242f3d] rounded-[22px] flex items-center px-3 py-1.5 shadow-lg border border-white/5 focus-within:border-[#3390ec]/30 transition-all">
+              <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="p-2 text-[#708499] hover:text-[#3390ec] transition-colors"><Smile size={24}/></button>
+              <textarea 
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                rows={1}
+                placeholder="پیام خود را بنویسید..."
+                className="flex-1 bg-transparent border-none outline-none text-[15px] mx-2 py-2 max-h-40 resize-none no-scrollbar placeholder:text-[#708499]"
+              />
+              <button onClick={() => fileInputRef.current?.click()} className="p-2 text-[#708499] hover:text-[#3390ec] transition-colors"><Paperclip size={24}/></button>
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+            </div>
+            
+            <button 
+              onClick={() => inputText.trim() ? handleSend() : toggleRecording()}
+              className={`p-3.5 rounded-full shadow-xl transition-all active:scale-90 ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-[#3390ec] hover:bg-[#2881d9]'}`}
+            >
+              {inputText.trim() ? <Send size={22} className="text-white rotate-180" /> : (isRecording ? <Square size={22} className="text-white fill-white" /> : <Mic size={22} className="text-white" />)}
+            </button>
+          </div>
+        ) : (
+          <div className="text-center p-2 text-[#708499] text-sm bg-[#17212b] rounded-xl border border-white/5">
+            فقط ادمین‌ها می‌توانند در این کانال پیام ارسال کنند.
+          </div>
+        )}
+      </footer>
+
+      {/* Info Sidebar (Admin Panel) */}
+      <div className={`absolute left-0 top-0 bottom-0 w-full md:w-[400px] bg-[#17212b] border-r border-black/30 z-50 transition-transform duration-300 shadow-2xl flex flex-col ${showInfo ? 'translate-x-0' : '-translate-x-full'}`}>
+        
+        {/* Sidebar Header */}
+        <div className="p-4 flex items-center gap-4 bg-[#242f3d] border-b border-black/20 shrink-0">
+          <button onClick={() => setShowInfo(false)} className="p-2 hover:bg-white/5 rounded-full text-[#708499]"><ChevronLeft className="rotate-180"/></button>
+          <h3 className="font-bold text-lg text-white">
+             {chatInfo.isSaved ? 'پیام‌های ذخیره شده' : (isGroup ? 'مدیریت گروه' : (isChannel ? 'مدیریت کانال' : 'اطلاعات کاربر'))}
+          </h3>
+          {isAdmin && (isGroup || isChannel) && (
+             <div className="mr-auto flex bg-[#17212b] rounded-lg p-0.5 border border-white/10">
+                <button onClick={() => setEditTab('info')} className={`p-1.5 rounded-md ${editTab==='info'?'bg-[#3390ec] text-white':'text-[#708499]'}`}><Info size={18}/></button>
+                <button onClick={() => setEditTab('permissions')} className={`p-1.5 rounded-md ${editTab==='permissions'?'bg-[#3390ec] text-white':'text-[#708499]'}`}><Shield size={18}/></button>
+             </div>
+          )}
         </div>
 
-        {/* Sliding Right Panels (Info / Admin) */}
-        <div className={`absolute left-0 top-0 bottom-0 w-full md:w-[350px] bg-[#17212b] border-r border-[#0e1621] z-20 transition-transform duration-300 ${showInfo || showAdminSettings ? 'translate-x-0' : '-translate-x-full'}`}>
-           <div className="p-4 flex items-center gap-4 border-b border-[#0e1621] bg-[#242f3d]">
-              <button onClick={() => {setShowInfo(false); setShowAdminSettings(false);}} className="p-2 text-[#708499] hover:text-white"><ChevronLeft size={22} className="rotate-180"/></button>
-              <h3 className="font-bold">{showAdminSettings ? 'مدیریت گفتگو' : 'اطلاعات'}</h3>
-           </div>
-           
-           <div className="overflow-y-auto h-[calc(100%-64px)] p-6 no-scrollbar space-y-8">
-              {showAdminSettings ? (
-                <>
-                  <section className="space-y-4">
-                    <h4 className="text-xs font-bold text-[#3390ec] uppercase tracking-widest flex items-center gap-2"><Shield size={14}/> امنیت و دسترسی</h4>
-                    <PermissionToggle label="ارسال پیام" value={chat.permissions?.canSendMessages} onChange={v => updateSettings('permissions', {...chat.permissions, canSendMessages: v})} />
-                    <PermissionToggle label="افزودن کاربر" value={chat.permissions?.canAddUsers} onChange={v => updateSettings('permissions', {...chat.permissions, canAddUsers: v})} />
-                  </section>
-                  
-                  <section className="space-y-4">
-                    <h4 className="text-xs font-bold text-[#3390ec] uppercase tracking-widest flex items-center gap-2"><Link size={14}/> لینک دعوت</h4>
-                    <div className="p-4 bg-[#242f3d] rounded-2xl flex flex-col gap-2">
-                      <div className="flex items-center justify-between gap-2 overflow-hidden">
-                        <p className="text-[10px] font-mono text-white/80 truncate flex-1">{chat.inviteLink || 'لینکی وجود ندارد'}</p>
-                        {chat.inviteLink && (
-                          <button onClick={() => copyToClipboard(chat.inviteLink!)} className="p-2 hover:bg-white/10 rounded-lg">
-                            {copied ? <Check size={14} className="text-green-500"/> : <Copy size={14} className="text-[#3390ec]"/>}
-                          </button>
-                        )}
-                      </div>
-                      <button onClick={() => updateSettings('inviteLink', `https://starly.chat/j/${chat.id.slice(-6)}`)} className="w-full py-2 text-xs text-[#3390ec] font-bold border border-[#3390ec]/30 rounded-lg hover:bg-[#3390ec]/10">ساخت لینک جدید</button>
-                    </div>
-                  </section>
+        <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6">
+          
+          {/* Profile Section */}
+          <div className="text-center relative">
+            {chatInfo.isSaved ? (
+              <div className="w-32 h-32 rounded-full bg-[#3390ec] flex items-center justify-center mx-auto shadow-2xl mb-4 border-4 border-white/10">
+                <Bookmark size={48} className="text-white fill-current"/>
+              </div>
+            ) : (
+              <img src={chatInfo.avatar || ''} className="w-32 h-32 rounded-full mx-auto border-4 border-[#3390ec] object-cover shadow-2xl mb-4" />
+            )}
 
-                  <section className="space-y-4">
-                    <h4 className="text-xs font-bold text-[#3390ec] uppercase tracking-widest flex items-center gap-2"><ImageIcon size={14}/> ویرایش پروفایل</h4>
-                    <div className="flex flex-col gap-3">
-                       <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 p-3 bg-[#242f3d] rounded-xl text-sm border border-white/5 hover:border-[#3390ec]/40 transition-all">
-                        <ImageIcon size={18} className="text-[#3390ec]"/> تغییر عکس پروفایل
-                       </button>
-                       <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageChange} />
-                       <input defaultValue={chat.groupName} onBlur={e => updateSettings('groupName', e.target.value)} placeholder="نام گفتگو" className="w-full bg-[#242f3d] p-3 rounded-xl outline-none text-sm border border-white/5 focus:border-[#3390ec]/40" />
-                       <textarea defaultValue={chat.description} onBlur={e => updateSettings('description', e.target.value)} placeholder="توضیحات گفتگو" className="w-full bg-[#242f3d] p-3 rounded-xl outline-none text-sm h-24 resize-none border border-white/5 focus:border-[#3390ec]/40" />
-                    </div>
-                    <button onClick={() => {setShowAdminSettings(false); setShowInfo(true);}} className="w-full py-3 bg-[#3390ec] rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">ذخیره و بازگشت</button>
-                  </section>
-                </>
-              ) : (
-                <>
-                  <div className="text-center">
-                    <div className="relative w-24 h-24 mx-auto mb-4 group cursor-pointer" onClick={() => isAdmin && fileInputRef.current?.click()}>
-                      <img src={chat.type === 'group' || chat.type === 'channel' ? chat.groupAvatar : other?.avatar} className="w-24 h-24 rounded-full border-2 border-[#3390ec] object-cover shadow-2xl" />
-                      {isAdmin && (
-                        <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-                          <ImageIcon size={24}/>
+            {isEditingInfo ? (
+              <div className="space-y-3 animate-in fade-in">
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#3390ec] text-right block">نام گروه/کانال</label>
+                    <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full bg-[#242f3d] p-3 rounded-xl border border-white/10 text-center font-bold outline-none focus:border-[#3390ec] text-white"/>
+                 </div>
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#3390ec] text-right block">توضیحات</label>
+                    <textarea value={editDesc} onChange={e=>setEditDesc(e.target.value)} className="w-full bg-[#242f3d] p-3 rounded-xl border border-white/10 text-center text-sm resize-none outline-none focus:border-[#3390ec] text-white" placeholder="توضیحات..."/>
+                 </div>
+                 <button onClick={saveInfo} className="w-full py-2 bg-[#3390ec] rounded-lg font-bold text-sm shadow-lg flex items-center justify-center gap-2 text-white"><CheckCheck size={16}/> ذخیره تغییرات</button>
+                 <button onClick={()=>setIsEditingInfo(false)} className="w-full py-2 bg-red-500/10 text-red-400 rounded-lg font-bold text-sm">لغو</button>
+              </div>
+            ) : (
+              <div>
+                <h2 className="text-2xl font-bold text-white mb-1">{chatInfo.title}</h2>
+                <p className="text-sm text-[#708499] leading-relaxed">{chat.type === 'private' && !chatInfo.isSaved ? `@${other?.username}` : (chat.description || (chatInfo.isSaved ? '' : 'بدون توضیحات'))}</p>
+                {isAdmin && (isGroup || isChannel) && editTab === 'info' && (
+                  <button onClick={() => setIsEditingInfo(true)} className="mt-4 text-[#3390ec] text-xs font-bold bg-[#3390ec]/10 px-4 py-2 rounded-full hover:bg-[#3390ec]/20">ویرایش اطلاعات</button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* PERMISSIONS & SETTINGS TAB (Admin Only) */}
+          {isAdmin && (isGroup || isChannel) && editTab === 'permissions' && (
+             <div className="space-y-4 animate-in slide-in-from-left">
+                <div className="bg-[#242f3d] p-4 rounded-2xl border border-white/5">
+                   <h4 className="text-[#3390ec] font-bold text-xs uppercase tracking-widest mb-4 flex items-center gap-2"><Clock size={14}/> حالت آرام (Slow Mode)</h4>
+                   <input type="range" min="0" max="60" step="5" value={editSlowMode} onChange={e=>setEditSlowMode(Number(e.target.value))} className="w-full accent-[#3390ec]"/>
+                   <div className="flex justify-between text-[10px] text-[#708499] mt-2">
+                      <span>خاموش</span>
+                      <span>{editSlowMode > 0 ? `${editSlowMode} ثانیه` : ''}</span>
+                      <span>60 ثانیه</span>
+                   </div>
+                </div>
+
+                <div className="bg-[#242f3d] p-4 rounded-2xl border border-white/5 space-y-3">
+                   <h4 className="text-[#3390ec] font-bold text-xs uppercase tracking-widest flex items-center gap-2"><Lock size={14}/> دسترسی‌ها</h4>
+                   {isGroup && (
+                     <div className="flex items-center justify-between p-2">
+                        <span className="text-sm text-white">ارسال پیام توسط اعضا</span>
+                        <div className={`w-10 h-6 rounded-full p-1 cursor-pointer transition-colors ${true ? 'bg-[#3390ec]' : 'bg-[#17212b] border border-white/10'}`}>
+                           <div className="w-4 h-4 bg-white rounded-full shadow-sm"/>
                         </div>
+                     </div>
+                   )}
+                   <div className="flex items-center justify-between p-2">
+                        <span className="text-sm text-white">افزودن عضو جدید</span>
+                        <div className={`w-10 h-6 rounded-full p-1 cursor-pointer transition-colors ${true ? 'bg-[#3390ec]' : 'bg-[#17212b] border border-white/10'}`}>
+                           <div className="w-4 h-4 bg-white rounded-full shadow-sm"/>
+                        </div>
+                   </div>
+                   <button onClick={saveInfo} className="w-full mt-2 py-2 bg-[#3390ec]/10 text-[#3390ec] rounded-lg text-xs font-bold">ذخیره تنظیمات</button>
+                </div>
+             </div>
+          )}
+
+          {/* INFO TAB CONTENT */}
+          {editTab === 'info' && (
+          <>
+            {/* Invite Link Section */}
+            {(isGroup || isChannel) && chat.inviteLink && (
+              <div className="bg-[#242f3d] p-4 rounded-2xl border border-white/5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#3390ec] font-bold text-xs uppercase tracking-widest">
+                    <LinkIcon size={14}/> لینک دعوت
+                  </div>
+                  {isAdmin && <button onClick={regenerateInviteLink} className="text-[10px] text-red-400 hover:bg-red-500/10 px-2 py-1 rounded flex items-center gap-1"><RotateCcw size={10}/> بازنشانی لینک</button>}
+                </div>
+                <div className="flex items-center gap-2 bg-[#0e1621] p-3 rounded-xl border border-dashed border-[#3390ec]/30 cursor-pointer hover:bg-[#0e1621]/80 group" onClick={() => navigator.clipboard.writeText(chat.inviteLink!)}>
+                  <span className="text-sm flex-1 truncate text-[#708499] font-mono select-all" dir="ltr">{chat.inviteLink}</span>
+                  <Copy size={16} className="text-[#3390ec]"/>
+                </div>
+                <p className="text-[10px] text-[#708499] pr-1">هر کسی با این لینک می‌تواند عضو شود.</p>
+              </div>
+            )}
+
+            {/* Members List */}
+            {(isGroup || isChannel) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <h4 className="text-[#3390ec] font-bold text-xs uppercase tracking-widest flex items-center gap-2"><Users size={14}/> اعضا ({chat.participants.length})</h4>
+                  {isAdmin && <button className="text-[10px] bg-[#3390ec]/10 text-[#3390ec] px-2 py-1 rounded-lg hover:bg-[#3390ec]/20 transition-colors">افزودن عضو</button>}
+                </div>
+                <div className="bg-[#242f3d] rounded-2xl overflow-hidden border border-white/5">
+                  {chat.participants.map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-3 hover:bg-[#2b3949] transition-colors border-b border-white/5 last:border-0 group/user">
+                      <div className="flex items-center gap-3">
+                        <img src={p.avatar} className="w-10 h-10 rounded-full bg-[#17212b]"/>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-white">{p.displayName}</p>
+                          <p className="text-[10px] text-[#708499]">@{p.username} {p.id === chat.adminId && <span className="text-[#3390ec]">(مالک)</span>}</p>
+                        </div>
+                      </div>
+                      {isAdmin && p.id !== currentUser.id && (
+                        <button onClick={() => onAction('removeParticipant', p)} className="p-2 text-red-500/50 hover:text-red-500 opacity-0 group-hover/user:opacity-100 transition-all hover:bg-red-500/10 rounded-lg">
+                          <UserMinus size={18}/>
+                        </button>
                       )}
                     </div>
-                    <h2 className="text-xl font-bold">{title}</h2>
-                    <p className="text-sm text-[#708499]">{chat.type === 'private' ? `@${other?.username}` : (chat.type === 'channel' ? 'کانال عمومی' : 'گروه خصوصی')}</p>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                       <h4 className="text-xs font-bold text-[#3390ec] uppercase tracking-wider">اعضا ({chat.participants.length})</h4>
-                       {isAdmin && (
-                         <button onClick={() => setShowAddMember(true)} className="text-xs text-[#3390ec] flex items-center gap-1 font-bold hover:underline">
-                          <UserPlus size={14}/> افزودن کاربر
-                         </button>
-                       )}
-                    </div>
-                    <div className="space-y-1">
-                      {chat.participants.map(p => (
-                        <div key={p.id} className="flex items-center justify-between group/member p-2 hover:bg-[#242f3d] rounded-xl transition-all">
-                           <div className="flex items-center gap-3">
-                              <img src={p.avatar} className="w-8 h-8 rounded-full object-cover border border-white/10" />
-                              <div className="flex flex-col">
-                                 <span className="text-sm font-medium">{p.displayName}</span>
-                                 <span className="text-[10px] text-[#708499]">@{p.username}</span>
-                              </div>
-                           </div>
-                           <div className="flex items-center gap-2">
-                             {chat.adminId === p.id && <Shield size={12} className="text-[#3390ec]"/>}
-                             {chat.admins?.[p.id] && chat.adminId !== p.id && <UserCheck size={12} className="text-green-400"/>}
-                             
-                             {isOwner && p.id !== currentUser.id && (
-                               <div className="flex opacity-0 group-hover/member:opacity-100 transition-all gap-1">
-                                 {!chat.admins?.[p.id] && (
-                                   <button onClick={() => setShowPromoteModal(p)} className="p-1 text-green-400 hover:bg-green-400/10 rounded" title="ارتقا به ادمین"><UserCheck size={16}/></button>
-                                 )}
-                                 <button className="p-1 text-red-400 hover:bg-red-400/10 rounded" title="حذف کاربر"><UserMinus size={16}/></button>
-                               </div>
-                             )}
-                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-           </div>
-        </div>
-      </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+          )}
 
-      {/* Footer / Input Area */}
-      <div className="p-4 bg-[#17212b]/95 backdrop-blur-md border-t border-[#0e1621]">
-        {isReadOnly ? (
-          <div className="p-3 text-center text-[#708499] text-sm bg-[#242f3d] rounded-2xl border border-[#3390ec]/10">فقط مدیران می‌توانند در این کانال پیام بفرستند.</div>
-        ) : (
-          <form onSubmit={handleSendMessage} className="flex items-end gap-3">
-            <div className="flex-1 bg-[#242f3d] rounded-2xl flex items-center px-4 py-2 border border-transparent focus-within:border-[#3390ec]/30 transition-all relative">
-              <Smile className="text-[#708499] cursor-pointer hover:text-white" size={24}/>
-              <textarea
-                value={inputText}
-                onChange={e => setInputText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="پیام خود را بنویسید..."
-                className="flex-1 bg-transparent border-none outline-none text-white resize-none mx-2 py-2 text-sm max-h-32 no-scrollbar scrollbar-hide"
-                rows={1}
-                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-              />
-              <Paperclip className="text-[#708499] cursor-pointer hover:text-white" size={24}/>
+          {/* Actions */}
+          {!chatInfo.isSaved && (
+            <div className="pt-4 space-y-3">
+              <button onClick={() => { onDeleteChat(); setShowInfo(false); }} className="w-full py-4 bg-red-500/10 text-red-500 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-red-500/20 transition-all shadow-sm border border-red-500/20">
+                <Trash size={20}/> {isAdmin ? 'حذف کامل گفتگو' : 'ترک گفتگو'}
+              </button>
             </div>
-            <button type="submit" className="p-4 bg-[#3390ec] text-white rounded-full shadow-lg hover:bg-[#2881d9] transition-all transform active:scale-90">
-              {inputText.trim() ? <Send size={22} className="rotate-180" /> : <Mic size={22} />}
-            </button>
-          </form>
-        )}
+          )}
+        </div>
       </div>
-
-      {/* Admin Promotion Modal */}
-      {showPromoteModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-           <div className="bg-[#17212b] w-full max-w-xs rounded-3xl p-6 border border-[#242f3d] shadow-2xl animate-in zoom-in">
-              <h3 className="font-bold text-center mb-4">ارتقا {showPromoteModal.displayName} به مدیر</h3>
-              <p className="text-xs text-[#708499] text-center mb-6">آیا مایلید به این کاربر دسترسی‌های مدیریتی بدهید؟</p>
-              <div className="flex gap-2">
-                 <button onClick={() => setShowPromoteModal(null)} className="flex-1 py-3 text-sm font-bold bg-[#242f3d] rounded-xl hover:bg-[#2b3949] transition-colors">انصراف</button>
-                 <button onClick={() => promoteToAdmin(showPromoteModal)} className="flex-1 py-3 text-sm font-bold bg-[#3390ec] rounded-xl hover:bg-[#2881d9] transition-colors">تایید ارتقا</button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* Add Member Modal */}
-      {showAddMember && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-           <div className="bg-[#17212b] w-full max-w-sm rounded-3xl p-6 border border-[#242f3d] shadow-2xl animate-in zoom-in flex flex-col h-[500px]">
-              <div className="flex justify-between items-center mb-6">
-                 <h3 className="font-bold">افزودن کاربر به گفتگو</h3>
-                 <button onClick={() => setShowAddMember(false)} className="p-1 hover:bg-white/10 rounded-full"><X size={20}/></button>
-              </div>
-              <div className="relative mb-4">
-                <Search className="absolute right-3 top-2.5 text-[#708499]" size={16}/>
-                <input value={memberSearch} onChange={e=>setMemberSearch(e.target.value)} className="w-full bg-[#242f3d] rounded-xl py-2 pr-10 pl-4 text-sm text-white focus:ring-1 focus:ring-[#3390ec] outline-none" placeholder="جستجوی کاربر..." />
-              </div>
-              <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-                {filteredNewMembers.map(u => (
-                  <div key={u.id} onClick={() => { onAction('addParticipant', u); setShowAddMember(false); }} className="flex items-center gap-3 p-3 hover:bg-[#242f3d] rounded-xl cursor-pointer transition-all border border-transparent hover:border-[#3390ec]/30 group">
-                    <img src={u.avatar} className="w-10 h-10 rounded-full object-cover" />
-                    <div className="flex-1">
-                      <p className="text-sm font-bold group-hover:text-[#3390ec]">{u.displayName}</p>
-                      <p className="text-[10px] text-[#708499]">@{u.username}</p>
-                    </div>
-                    <UserPlus size={16} className="text-[#3390ec] opacity-0 group-hover:opacity-100 transition-all"/>
-                  </div>
-                ))}
-              </div>
-           </div>
-        </div>
-      )}
     </div>
   );
 };
-
-const PermissionToggle = ({label, value, onChange}: {label: string, value?: boolean, onChange: (v: boolean) => void}) => (
-  <div className="flex items-center justify-between p-3 bg-[#242f3d] rounded-xl border border-white/5 hover:border-white/10 transition-all">
-    <span className="text-sm font-medium">{label}</span>
-    <button onClick={() => onChange(!value)} className={`w-10 h-5 rounded-full relative transition-all duration-200 ${value ? 'bg-[#3390ec]' : 'bg-gray-600'}`}>
-      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${value ? 'left-6' : 'left-1'}`} />
-    </button>
-  </div>
-);
-
-const Search = ({ className, size }: { className?: string; size?: number }) => (
-  <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-);
 
 export default ChatArea;
