@@ -1,0 +1,81 @@
+
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GeminiGram | جمینی‌گرام</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap');
+    
+    :root {
+      --tg-bg: #0f1621;
+      --tg-sidebar: #17212b;
+      --tg-active: #3390ec;
+      --tg-text: #ffffff;
+      --tg-text-secondary: #708499;
+      --tg-item-hover: #242f3d;
+    }
+
+    .oled-theme {
+      --tg-bg: #000000 !important;
+      --tg-sidebar: #0a0a0a !important;
+      --tg-item-hover: #141414 !important;
+    }
+
+    body {
+      font-family: 'Vazirmatn', sans-serif;
+      background-color: var(--tg-bg);
+      color: var(--tg-text);
+      overflow: hidden;
+      margin: 0;
+      -webkit-tap-highlight-color: transparent;
+      transition: background-color 0.5s ease;
+    }
+
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Telegram Bubble Style */
+    .bubble-shadow {
+      shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+
+    /* RTL Adjustments */
+    .rtl-flip { transform: scaleX(-1); }
+
+    /* Animations */
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+    .animate-slide { animation: slideIn 0.3s ease-out; }
+    
+    /* Active State Overlay */
+    .active-chat-overlay {
+      background-color: var(--tg-active);
+      color: white;
+    }
+
+    /* Specific overrides for themes */
+    .oled-theme #root > div {
+       background-color: #000;
+    }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>
