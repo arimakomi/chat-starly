@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import SettingsModal from './components/SettingsModal';
 import { gemini } from './services/geminiService';
+import { Lock } from 'lucide-react';
 
 const AI_BOT: User = {
   id: 'ai-assistant',
@@ -29,6 +30,10 @@ const App: React.FC = () => {
   const [activeFolder, setActiveFolder] = useState<FolderType>('all');
   const [showSettings, setShowSettings] = useState(false);
   
+  // App Lock State
+  const [isAppLocked, setIsAppLocked] = useState(false);
+  const [lockInput, setLockInput] = useState('');
+  
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
@@ -39,6 +44,8 @@ const App: React.FC = () => {
         const user = JSON.parse(savedSession);
         setCurrentUser(user);
         document.body.className = `${user.theme}-theme`;
+        // Check for Passcode
+        if (user.passcode) setIsAppLocked(true);
       } catch (e) { console.error(e); }
     }
     return () => syncChannelRef.current?.close();
@@ -89,6 +96,16 @@ const App: React.FC = () => {
     setCurrentUser(user);
     localStorage.setItem('starly_session', JSON.stringify(user));
     document.body.className = `${user.theme}-theme`;
+  };
+
+  const handleUnlock = (code: string) => {
+    if (code === currentUser?.passcode) {
+      setIsAppLocked(false);
+      setLockInput('');
+    } else {
+      // Shake animation or error could be added here
+      setTimeout(() => setLockInput(''), 300);
+    }
   };
 
   const handleUsernameClick = (username: string) => {
@@ -290,6 +307,53 @@ const App: React.FC = () => {
   };
 
   if (!currentUser) return <Login onLogin={handleAuth} />;
+
+  // Lock Screen Render
+  if (isAppLocked) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0e1621] text-white animate-in zoom-in font-['Vazirmatn']">
+         <div className="w-20 h-20 bg-[#3390ec]/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
+            <Lock size={40} className="text-[#3390ec]"/>
+         </div>
+         <h2 className="text-xl font-bold mb-4">برنامه قفل است</h2>
+         <p className="text-sm text-[#708499] mb-8">لطفا کد ۴ رقمی خود را وارد کنید</p>
+         <div className="flex gap-4 mb-8">
+            {[0,1,2,3].map(i => (
+              <div key={i} className={`w-4 h-4 rounded-full transition-all ${lockInput.length > i ? 'bg-[#3390ec] scale-110' : 'bg-white/10'}`}/>
+            ))}
+         </div>
+         <div className="grid grid-cols-3 gap-6">
+            {[1,2,3,4,5,6,7,8,9].map(n => (
+              <button 
+                key={n} 
+                onClick={() => {
+                  const next = lockInput + n;
+                  setLockInput(next);
+                  if (next.length === 4) handleUnlock(next);
+                }}
+                className="w-16 h-16 rounded-full bg-[#17212b] hover:bg-[#242f3d] text-2xl font-bold transition-all active:scale-95 border border-white/5"
+              >
+                {n}
+              </button>
+            ))}
+            <div/>
+            <button 
+              onClick={() => {
+                const next = lockInput + '0';
+                setLockInput(next);
+                if (next.length === 4) handleUnlock(next);
+              }}
+              className="w-16 h-16 rounded-full bg-[#17212b] hover:bg-[#242f3d] text-2xl font-bold transition-all active:scale-95 border border-white/5"
+            >
+              0
+            </button>
+            <button onClick={() => setLockInput(prev => prev.slice(0, -1))} className="flex items-center justify-center text-[#708499] hover:text-white transition-colors">
+               <span className="text-sm font-bold">حذف</span>
+            </button>
+         </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full bg-[#0e1621] text-white overflow-hidden font-['Vazirmatn']" dir="rtl">

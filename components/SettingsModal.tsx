@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { X, Shield, Key, Check, Smartphone, Lock, Camera, LogOut, ChevronLeft, Eye, Clock, Monitor, User as UserIcon, ArrowRight, Copy, QrCode } from 'lucide-react';
 
@@ -13,13 +13,40 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
   const [tab, setTab] = useState<'profile' | 'security'>('profile');
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio || '');
-  const [otherSessions, setOtherSessions] = useState(true);
+  
+  // Session State
+  const [sessionInfo, setSessionInfo] = useState<{os: string, browser: string}>({os: 'Unknown', browser: 'Web'});
 
   // 2FA Setup State
-  const [twoFactorStep, setTwoFactorStep] = useState<0 | 1 | 2>(0); // 0: off, 1: guide, 2: scan & verify
+  const [twoFactorStep, setTwoFactorStep] = useState<0 | 1 | 2>(0);
   const [twoFactorSecret, setTwoFactorSecret] = useState('');
   const [verify2FACode, setVerify2FACode] = useState('');
   const [error2FA, setError2FA] = useState('');
+
+  // Passcode Setup State
+  const [passcodeStep, setPasscodeStep] = useState<0 | 1 | 2>(0); // 0: off, 1: enter new, 2: confirm
+  const [tempPasscode, setTempPasscode] = useState('');
+  const [confirmPasscode, setConfirmPasscode] = useState('');
+  const [passcodeError, setPasscodeError] = useState('');
+
+  useEffect(() => {
+    // Basic User Agent Parsing for "Real" Session Info
+    const ua = navigator.userAgent;
+    let os = "Unknown OS";
+    if (ua.indexOf("Win") !== -1) os = "Windows";
+    if (ua.indexOf("Mac") !== -1) os = "macOS";
+    if (ua.indexOf("Linux") !== -1) os = "Linux";
+    if (ua.indexOf("Android") !== -1) os = "Android";
+    if (ua.indexOf("iOS") !== -1 || ua.indexOf("iPhone") !== -1) os = "iOS";
+
+    let browser = "Web Browser";
+    if (ua.indexOf("Chrome") !== -1) browser = "Chrome";
+    else if (ua.indexOf("Firefox") !== -1) browser = "Firefox";
+    else if (ua.indexOf("Safari") !== -1) browser = "Safari";
+    else if (ua.indexOf("Edge") !== -1) browser = "Edge";
+
+    setSessionInfo({ os, browser });
+  }, []);
 
   const save = (changes: Partial<User>) => {
     const updatedUser = { ...user, ...changes };
@@ -72,13 +99,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
 
   const handle2FAVerify = () => {
     setError2FA('');
-    // Mock verification: Check if it's 6 digits
-    // In a real app, we would verify the TOTP code against the secret here.
     if (!/^\d{6}$/.test(verify2FACode)) {
       return setError2FA('کد وارد شده باید ۶ رقم باشد.');
     }
-    
-    // Success
     save({ twoFactorEnabled: true });
     alert('تایید دو مرحله‌ای با موفقیت فعال شد!');
     setTwoFactorStep(0);
@@ -86,10 +109,77 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
     setTwoFactorSecret('');
   };
 
+  const startPasscodeSetup = () => {
+    if (user.passcode) {
+      if (confirm('آیا می‌خواهید قفل برنامه را غیرفعال کنید؟')) {
+        save({ passcode: undefined });
+      }
+    } else {
+      setPasscodeStep(1);
+      setTempPasscode('');
+      setConfirmPasscode('');
+      setPasscodeError('');
+    }
+  };
+
+  const handlePasscodeSet = () => {
+    setPasscodeError('');
+    if (passcodeStep === 1) {
+      if (tempPasscode.length < 4) {
+        setPasscodeError('رمز عبور باید ۴ رقم باشد.');
+        return;
+      }
+      setPasscodeStep(2);
+    } else if (passcodeStep === 2) {
+      if (confirmPasscode !== tempPasscode) {
+        setPasscodeError('رمز عبور مطابقت ندارد. مجدد تلاش کنید.');
+        setPasscodeStep(1);
+        setTempPasscode('');
+        setConfirmPasscode('');
+        return;
+      }
+      save({ passcode: tempPasscode });
+      setPasscodeStep(0);
+      alert('قفل برنامه فعال شد.');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       <div className="w-full max-w-md bg-[#17212b] rounded-3xl overflow-hidden border border-white/5 shadow-2xl animate-in zoom-in h-[85vh] flex flex-col relative">
         
+        {/* Passcode Setup Overlay */}
+        {passcodeStep > 0 && (
+          <div className="absolute inset-0 bg-[#17212b] z-50 flex flex-col animate-in slide-in-from-right items-center justify-center p-8 space-y-6">
+             <div className="w-20 h-20 bg-[#3390ec]/20 rounded-full flex items-center justify-center text-[#3390ec] mb-4">
+                <Lock size={32}/>
+             </div>
+             <h3 className="font-bold text-white text-lg">
+               {passcodeStep === 1 ? 'رمز عبور جدید را وارد کنید' : 'رمز عبور را تایید کنید'}
+             </h3>
+             <input 
+               type="password"
+               inputMode="numeric"
+               value={passcodeStep === 1 ? tempPasscode : confirmPasscode}
+               onChange={e => {
+                 const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+                 if (passcodeStep === 1) setTempPasscode(val);
+                 else setConfirmPasscode(val);
+               }}
+               className="bg-[#242f3d] text-center text-3xl tracking-[1em] text-white p-4 rounded-xl w-full border border-[#3390ec]/50 outline-none focus:bg-[#2b3949] transition-all placeholder:tracking-normal placeholder:text-sm"
+               placeholder="____"
+               autoFocus
+             />
+             {passcodeError && <p className="text-red-400 text-xs">{passcodeError}</p>}
+             <div className="flex gap-3 w-full">
+                <button onClick={() => setPasscodeStep(0)} className="flex-1 py-3 rounded-xl font-bold text-[#708499] hover:bg-white/5 transition-all">انصراف</button>
+                <button onClick={handlePasscodeSet} disabled={(passcodeStep === 1 ? tempPasscode : confirmPasscode).length !== 4} className="flex-1 py-3 bg-[#3390ec] rounded-xl font-bold text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                  {passcodeStep === 1 ? 'ادامه' : 'تایید'}
+                </button>
+             </div>
+          </div>
+        )}
+
         {/* 2FA Wizard Overlay */}
         {twoFactorStep > 0 && (
           <div className="absolute inset-0 bg-[#17212b] z-50 flex flex-col animate-in slide-in-from-right overflow-y-auto no-scrollbar">
@@ -221,24 +311,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
                      <div className="p-4 border-b border-white/5 flex items-center gap-4">
                         <div className="w-10 h-10 bg-[#3390ec] rounded-full flex items-center justify-center"><Smartphone className="text-white"/></div>
                         <div className="flex-1">
-                           <h5 className="font-bold text-white text-sm">این دستگاه (Web)</h5>
-                           <p className="text-[10px] text-green-400">آنلاین • استارلی چت وب</p>
+                           <h5 className="font-bold text-white text-sm">دستگاه فعلی</h5>
+                           <p className="text-[10px] text-green-400">آنلاین • {sessionInfo.browser} on {sessionInfo.os}</p>
                         </div>
                      </div>
-                     {otherSessions && (
-                       <div className="p-4 flex items-center gap-4 opacity-50 animate-in fade-in">
-                          <div className="w-10 h-10 bg-[#17212b] rounded-full flex items-center justify-center border border-white/10"><Monitor className="text-[#708499]"/></div>
-                          <div className="flex-1">
-                             <h5 className="font-bold text-white text-sm">Windows 11</h5>
-                             <p className="text-[10px] text-[#708499]">آخرین بازدید: ۲ ساعت پیش • شیراز، ایران</p>
-                          </div>
-                       </div>
-                     )}
-                     {otherSessions ? (
-                        <button onClick={() => setOtherSessions(false)} className="w-full p-3 text-red-400 text-xs font-bold hover:bg-red-500/10 transition-colors">بستن همه نشست‌های دیگر</button>
-                     ) : (
-                        <div className="w-full p-3 text-green-400 text-xs font-bold text-center bg-green-500/10">سایر نشست‌ها بسته شدند.</div>
-                     )}
+                     <div className="w-full p-3 text-center text-[#708499] text-xs font-bold bg-[#17212b]">
+                       سایر نشست‌ها وجود ندارد.
+                     </div>
                   </div>
                </section>
 
@@ -270,11 +349,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ user, onClose, onUpdateUs
                   />
                   <SecurityItem 
                     icon={<Lock/>} label="قفل برنامه (Passcode)" 
-                    onClick={() => {
-                      const code = prompt('کد جدید ۴ رقمی برای قفل برنامه:');
-                      if(code) save({passcode: code});
-                      else if(user.passcode && confirm('آیا رمز عبور حذف شود؟')) save({passcode: undefined});
-                    }} 
+                    onClick={startPasscodeSetup} 
                     extra={user.passcode ? 'فعال' : 'غیرفعال'}
                     isActive={!!user.passcode}
                   />

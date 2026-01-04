@@ -5,7 +5,7 @@ import {
   Send, Paperclip, Smile, MessageCircle, Trash, Mic, Info, X, 
   ChevronLeft, UserMinus, UserPlus, Image as ImageIcon, 
   Pin, Reply, BarChart2, Volume2, Square, Plus, CheckCheck, MoreVertical,
-  Link as LinkIcon, Edit3, Shield, Copy, Users, Bookmark, RotateCcw, Clock, Lock, ArrowRight, Link
+  Link as LinkIcon, Edit3, Shield, Copy, Users, Bookmark, RotateCcw, Clock, Lock, ArrowRight, Link, Search
 } from 'lucide-react';
 
 interface ChatAreaProps {
@@ -32,6 +32,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
   const [editDesc, setEditDesc] = useState('');
   const [editSlowMode, setEditSlowMode] = useState(0);
   
+  // Add Member State
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [addMemberQuery, setAddMemberQuery] = useState('');
+
   const msgEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -162,7 +166,27 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
     alert('لینک پیام با موفقیت کپی شد!');
   };
 
-  // Helper to render text with clickable @mentions
+  const handleAddMember = () => {
+    if (!addMemberQuery.trim()) return;
+    const users = JSON.parse(localStorage.getItem('starly_users') || '{}');
+    const cleanQuery = addMemberQuery.trim().toLowerCase().replace('@', '');
+    const found = Object.values(users).find((u: any) => u.username === cleanQuery);
+    
+    if (found) {
+      // @ts-ignore
+      if (chat.participants.some(p => p.id === found.id)) {
+        alert('این کاربر قبلا در گروه عضو است.');
+      } else {
+        onAction('addParticipant', found);
+        setShowAddMember(false);
+        setAddMemberQuery('');
+        alert(`${cleanQuery} با موفقیت اضافه شد.`);
+      }
+    } else {
+      alert('کاربر یافت نشد. لطفا نام کاربری صحیح را وارد کنید.');
+    }
+  };
+
   const renderMessageText = (text: string) => {
     const parts = text.split(/(@\w+)/g);
     return parts.map((part, index) => {
@@ -189,7 +213,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
       {/* Header */}
       <header className="h-16 flex items-center justify-between px-4 bg-[#17212b]/95 backdrop-blur-lg border-b border-black/20 z-20 shadow-sm">
         <div className="flex items-center gap-1 overflow-hidden">
-          {/* Back Button for Mobile */}
           <button onClick={onBack} className="md:hidden p-2 mr-1 text-[#708499] hover:text-white">
             <ArrowRight size={24} />
           </button>
@@ -222,10 +245,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
           const isMe = msg.senderId === currentUser.id;
           return (
             <div key={msg.id} className={`flex w-full animate-msg ${isMe ? 'justify-start' : 'justify-end'}`}>
-              
               <div className="flex items-end gap-2 max-w-[85%] group">
-                
-                {/* Actions (Reply & Link) - Left Side */}
                 <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity self-center">
                   <button 
                     onClick={() => setReplyingTo(msg)} 
@@ -325,10 +345,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
         )}
       </footer>
 
-      {/* Info Sidebar (Admin Panel) */}
+      {/* Info Sidebar */}
       <div className={`absolute left-0 top-0 bottom-0 w-full md:w-[400px] bg-[#17212b] border-r border-black/30 z-50 transition-transform duration-300 shadow-2xl flex flex-col ${showInfo ? 'translate-x-0' : '-translate-x-full'}`}>
-        
-        {/* Sidebar Header */}
         <div className="p-4 flex items-center gap-4 bg-[#242f3d] border-b border-black/20 shrink-0">
           <button onClick={() => setShowInfo(false)} className="p-2 hover:bg-white/5 rounded-full text-[#708499]"><ChevronLeft className="rotate-180"/></button>
           <h3 className="font-bold text-lg text-white">
@@ -343,8 +361,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
         </div>
 
         <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6">
-          
-          {/* Profile Section */}
           <div className="text-center relative">
             {chatInfo.isSaved ? (
               <div className="w-32 h-32 rounded-full bg-[#3390ec] flex items-center justify-center mx-auto shadow-2xl mb-4 border-4 border-white/10">
@@ -378,7 +394,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
             )}
           </div>
 
-          {/* PERMISSIONS & SETTINGS TAB (Admin Only) */}
           {isAdmin && (isGroup || isChannel) && editTab === 'permissions' && (
              <div className="space-y-4 animate-in slide-in-from-left">
                 <div className="bg-[#242f3d] p-4 rounded-2xl border border-white/5">
@@ -412,10 +427,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
              </div>
           )}
 
-          {/* INFO TAB CONTENT */}
           {editTab === 'info' && (
           <>
-            {/* Invite Link Section */}
             {(isGroup || isChannel) && chat.inviteLink && (
               <div className="bg-[#242f3d] p-4 rounded-2xl border border-white/5 space-y-2">
                 <div className="flex items-center justify-between">
@@ -432,13 +445,30 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
               </div>
             )}
 
-            {/* Members List */}
             {(isGroup || isChannel) && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-1">
                   <h4 className="text-[#3390ec] font-bold text-xs uppercase tracking-widest flex items-center gap-2"><Users size={14}/> اعضا ({chat.participants.length})</h4>
-                  {isAdmin && <button className="text-[10px] bg-[#3390ec]/10 text-[#3390ec] px-2 py-1 rounded-lg hover:bg-[#3390ec]/20 transition-colors">افزودن عضو</button>}
+                  {isAdmin && <button onClick={() => setShowAddMember(true)} className="text-[10px] bg-[#3390ec]/10 text-[#3390ec] px-2 py-1 rounded-lg hover:bg-[#3390ec]/20 transition-colors">افزودن عضو</button>}
                 </div>
+                
+                {/* Add Member Input Area */}
+                {showAddMember && (
+                  <div className="bg-[#242f3d] p-3 rounded-xl border border-[#3390ec]/50 flex items-center gap-2 animate-in fade-in">
+                    <Search size={16} className="text-[#708499]"/>
+                    <input 
+                      autoFocus
+                      value={addMemberQuery}
+                      onChange={e=>setAddMemberQuery(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddMember()}
+                      placeholder="نام کاربری را وارد کنید..." 
+                      className="flex-1 bg-transparent outline-none text-sm text-white"
+                    />
+                    <button onClick={handleAddMember} className="text-[#3390ec] text-xs font-bold px-2">افزودن</button>
+                    <button onClick={() => setShowAddMember(false)} className="text-[#708499]"><X size={14}/></button>
+                  </div>
+                )}
+
                 <div className="bg-[#242f3d] rounded-2xl overflow-hidden border border-white/5">
                   {chat.participants.map(p => (
                     <div key={p.id} className="flex items-center justify-between p-3 hover:bg-[#2b3949] transition-colors border-b border-white/5 last:border-0 group/user">
@@ -462,7 +492,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({ chat, currentUser, isTyping, onActi
           </>
           )}
 
-          {/* Actions */}
           {!chatInfo.isSaved && (
             <div className="pt-4 space-y-3">
               <button onClick={() => { onDeleteChat(); setShowInfo(false); }} className="w-full py-4 bg-red-500/10 text-red-500 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-red-500/20 transition-all shadow-sm border border-red-500/20">
